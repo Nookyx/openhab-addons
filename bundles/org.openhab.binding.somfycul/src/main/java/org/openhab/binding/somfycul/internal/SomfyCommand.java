@@ -15,20 +15,31 @@ package org.openhab.binding.somfycul.internal;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 
 /**
- * The {@link SomfyCULConfiguration} class contains fields mapping thing configuration parameters.
+ * The {@code SomfyCommand} provides the available commands due to Somfy's RTS protocol.
+ *
+ * http://culfw.de/commandref.html#cmd_Y
  *
  * @author Marc Klasser - Initial contribution
  */
 @NonNullByDefault
-public class SomfyCULConfiguration {
+public enum SomfyCommand {
+    MY("1"),
+    UP("2"),
+    DOWN("4"),
+    PROG("8");
+
+    private String actionKey;
+
+    private SomfyCommand(String actionKey) {
+        this.actionKey = actionKey;
+    }
 
     /**
-     * Sample configuration parameters. Replace with your own.
-     * 
-     * public String hostname = "";
-     * public String password = "";
-     * public int refreshInterval = 600;
+     * Returns the action key which is used for communicating with the CUL device.
+     *
+     * @return the action key
      */
-
-    // TODO: check if required, maybe remove.
+    public String getActionKey() {
+        return actionKey;
+    }
 }

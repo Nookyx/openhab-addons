@@ -15,20 +15,13 @@ package org.openhab.binding.somfycul.internal;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 
 /**
- * The {@link SomfyCULConfiguration} class contains fields mapping thing configuration parameters.
+ * Configuration of a CUL stick
  *
  * @author Marc Klasser - Initial contribution
  */
 @NonNullByDefault
-public class SomfyCULConfiguration {
+public class CULConfiguration {
 
-    /**
-     * Sample configuration parameters. Replace with your own.
-     * 
-     * public String hostname = "";
-     * public String password = "";
-     * public int refreshInterval = 600;
-     */
-
-    // TODO: check if required, maybe remove.
+    public String port = "/dev/ttyS0";
+    public int baudrate = 9600;
 }
