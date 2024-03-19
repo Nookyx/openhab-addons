@@ -21,13 +21,16 @@ import java.util.stream.Stream;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.core.io.transport.serial.SerialPortManager;
 import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingTypeUID;
 import org.openhab.core.thing.binding.BaseThingHandlerFactory;
 import org.openhab.core.thing.binding.ThingHandler;
 import org.openhab.core.thing.binding.ThingHandlerFactory;
+import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Reference;
 
 /**
  * The {@link SomfyCULHandlerFactory} is responsible for creating things and thing
@@ -43,6 +46,13 @@ public class SomfyCULHandlerFactory extends BaseThingHandlerFactory {
     private static final Set<ThingTypeUID> SUPPORTED_THING_TYPES_UIDS = Collections
             .unmodifiableSet(Stream.of(CUL_DEVICE_THING_TYPE, SOMFY_DEVICE_THING_TYPE).collect(Collectors.toSet()));
 
+    private final SerialPortManager serialPortManager;
+
+    @Activate
+    public SomfyCULHandlerFactory(final @Reference SerialPortManager serialPortManager) {
+        this.serialPortManager = serialPortManager;
+    }
+
     @Override
     public boolean supportsThingType(ThingTypeUID thingTypeUID) {
         return SUPPORTED_THING_TYPES_UIDS.contains(thingTypeUID);
@@ -53,7 +63,7 @@ public class SomfyCULHandlerFactory extends BaseThingHandlerFactory {
         ThingTypeUID thingTypeUID = thing.getThingTypeUID();
 
         if (thingTypeUID.equals(CUL_DEVICE_THING_TYPE) && thing instanceof Bridge) {
-            return new CULHandler((Bridge) thing);
+            return new CULHandler((Bridge) thing, serialPortManager);
         } else if (thingTypeUID.equals(SOMFY_DEVICE_THING_TYPE)) {
             return new SomfyCULHandler(thing);
         }

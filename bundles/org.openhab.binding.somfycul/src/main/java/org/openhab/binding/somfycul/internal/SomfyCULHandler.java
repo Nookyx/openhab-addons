@@ -20,7 +20,6 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.Properties;
 
-import org.apache.commons.io.FilenameUtils;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.openhab.core.OpenHAB;
 import org.openhab.core.library.types.OnOffType;
@@ -178,7 +177,12 @@ public class SomfyCULHandler extends BaseThingHandler {
         File directory = propertyFile.getParentFile();
         long maxAddress = 0;
         for (File file : directory.listFiles()) {
-            if (FilenameUtils.getExtension(file.getName()).equals("properties") && !file.equals(propertyFile)) {
+            String extension = null;
+            // Get file extension
+            if (file.getName().contains(".")) {
+                extension = file.getName().substring(file.getName().lastIndexOf(".") + 1);
+            }
+            if (extension != null && "properties".equals(extension) && !file.equals(propertyFile)) {
                 logger.info("Parsing properties from file {}", file);
                 FileReader fileReader = new FileReader(file);
                 Properties other = new Properties();

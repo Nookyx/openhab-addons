@@ -12,17 +12,18 @@
  */
 package org.openhab.binding.somfycul.internal;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Enumeration;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
-import org.apache.commons.io.IOUtils;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.core.io.transport.serial.PortInUseException;
+import org.openhab.core.io.transport.serial.SerialPort;
+import org.openhab.core.io.transport.serial.SerialPortIdentifier;
+import org.openhab.core.io.transport.serial.SerialPortManager;
+import org.openhab.core.io.transport.serial.UnsupportedCommOperationException;
 import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
@@ -32,10 +33,6 @@ import org.openhab.core.thing.binding.BaseBridgeHandler;
 import org.openhab.core.types.Command;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import gnu.io.CommPortIdentifier;
-import gnu.io.NoSuchPortException;
-import gnu.io.SerialPort;
 
 /**
  * The {@link CULHandler} is responsible for handling commands, which are
@@ -52,21 +49,21 @@ public class CULHandler extends BaseBridgeHandler {
 
     private @Nullable CULConfiguration config;
 
-    private static final String GNU_IO_RXTX_SERIAL_PORTS = "gnu.io.rxtx.SerialPorts";
-
     private long lastCommandTime = 0;
 
     @Nullable
-    private CommPortIdentifier portId;
+    private SerialPortIdentifier portId;
     @Nullable
     private SerialPort serialPort;
+    private final SerialPortManager serialPortManager;
     @Nullable
     private OutputStream outputStream;
     @Nullable
     private InputStream inputStream;
 
-    public CULHandler(Bridge bridge) {
+    public CULHandler(Bridge bridge, SerialPortManager serialPortManager) {
         super(bridge);
+        this.serialPortManager = serialPortManager;
     }
 
     @Override
@@ -113,85 +110,72 @@ public class CULHandler extends BaseBridgeHandler {
             outputStream.flush();
             lastCommandTime = System.currentTimeMillis();
             return true;
-        } catch (Exception e) {
+        } catch (IOException e) {
             logger.error("Error writing '{}' to serial port {}: {}", msg, portId.getName(), e.getMessage());
         }
         return false;
-    }
-
-    /**
-     * Registers the given port as system property {@value #GNU_IO_RXTX_SERIAL_PORTS}. The method is capable of
-     * extending the system property, if any other ports are already registered.
-     *
-     * @param port the port to be registered
-     */
-    private void initSerialPort(String port) {
-        String serialPortsProperty = System.getProperty(GNU_IO_RXTX_SERIAL_PORTS);
-        Set<String> serialPorts = null;
-
-        if (serialPortsProperty != null) {
-            serialPorts = Stream.of(serialPortsProperty.split(":")).collect(Collectors.toSet());
-        } else {
-            serialPorts = new HashSet<>();
-        }
-        if (serialPorts.add(port)) {
-            logger.debug("Added {} to the {} system property.", port, GNU_IO_RXTX_SERIAL_PORTS);
-            System.setProperty(GNU_IO_RXTX_SERIAL_PORTS, serialPorts.stream().collect(Collectors.joining(":")));
-        }
     }
 
     @Override
     public void initialize() {
         logger.debug("Start initializing!");
         config = getConfigAs(CULConfiguration.class);
-        if (config.port == null) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.OFFLINE.CONFIGURATION_ERROR, "Port must be set!");
+        String port = config.port;
+        portId = serialPortManager.getIdentifier(port);
+        if (portId == null) {
+            String availablePorts = serialPortManager.getIdentifiers().map(id -> id.getName())
+                    .collect(Collectors.joining(System.lineSeparator()));
+            String description = String.format("Serial port '%s' could not be found. Available ports are:%n%s", port,
+                    availablePorts);
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, description);
             return;
         }
         logger.info("got port: {}", config.port);
-        initSerialPort(config.port);
         try {
-            portId = CommPortIdentifier.getPortIdentifier(config.port);
-            // initialize serial port
             serialPort = portId.open("openHAB", 2000);
             // set port parameters
             serialPort.setSerialPortParams(config.baudrate, SerialPort.DATABITS_8, SerialPort.STOPBITS_1,
                     SerialPort.PARITY_NONE);
             inputStream = serialPort.getInputStream();
             outputStream = serialPort.getOutputStream();
-            // TODO Check version of CUL
+            // TODO: Check version of CUL
             updateStatus(ThingStatus.ONLINE);
             logger.debug("Finished initializing!");
-        } catch (NoSuchPortException e) {
-            // enumerate the port identifiers in the exception to be helpful
-            final StringBuilder sb = new StringBuilder();
-            @SuppressWarnings("unchecked")
-            Enumeration<CommPortIdentifier> portList = CommPortIdentifier.getPortIdentifiers();
-            while (portList.hasMoreElements()) {
-                final CommPortIdentifier id = portList.nextElement();
-                if (id.getPortType() == CommPortIdentifier.PORT_SERIAL) {
-                    sb.append(id.getName() + "\n");
-                }
-            }
+        } catch (IOException e) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, "IO Error: " + e.getMessage());
+        } catch (PortInUseException e) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, "Port already used: " + port);
+        } catch (UnsupportedCommOperationException e) {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
-                    "Serial port '" + config.port + "' could not be found. Available ports are:\n" + sb.toString());
-        } catch (Exception e) {
-            if (logger.isErrorEnabled()) {
-                logger.error("An error occurred while initializing the CUL connection.", e);
-            }
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
-                    "An error occurred while initializing the CUL connection: " + e.getMessage());
+                    "Unsupported operation on port '" + port + "': " + e.getMessage());
         }
     }
 
     @Override
     public void dispose() {
         super.dispose();
-        IOUtils.closeQuietly(outputStream);
-        IOUtils.closeQuietly(inputStream);
         if (serialPort != null) {
             serialPort.removeEventListener();
+        }
+        if (outputStream != null) {
+            try {
+                outputStream.close();
+            } catch (IOException e) {
+                logger.debug("Error while closing the output stream: {}", e.getMessage());
+            }
+        }
+        if (inputStream != null) {
+            try {
+                inputStream.close();
+            } catch (IOException e) {
+                logger.debug("Error while closing the input stream: {}", e.getMessage());
+            }
+        }
+        if (serialPort != null) {
             serialPort.close();
         }
+        outputStream = null;
+        inputStream = null;
+        serialPort = null;
     }
 }
