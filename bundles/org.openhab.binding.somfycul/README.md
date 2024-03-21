@@ -1,95 +1,110 @@
 # SomfyCUL Binding
 
-_Give some details about what this binding is meant for - a protocol, system, specific device._
-
-_If possible, provide some resources like pictures (only PNG is supported currently), a video, etc. to give an impression of what can be done with this binding._
-_You can place such resources into a `doc` folder next to this README.md._
-
-_Put each sentence in a separate line to improve readability of diffs._
+This binding supports controlling [Somfy RTS Rollershutters](https://www.somfysystems.com/en-us/products/rolling-shutters) via CUL sticks.
 
 ## Supported Things
 
-_Please describe the different supported things / devices including their ThingTypeUID within this section._
-_Which different types are supported, which models were tested etc.?_
-_Note that it is planned to generate some part of this based on the XML files within ```src/main/resources/OH-INF/thing``` of your binding._
+Currently these things are supported:
 
-- `bridge`: Short description of the Bridge, if any
-- `sample`: Short description of the Thing with the ThingTypeUID `sample`
+- `culdevice`: The CUL stick bridge used to send the actual signals to your rollershutters
+- `somfydevice`: The rollershutters (UP, DOWN, MY/STOP control of a rollershutter)
 
 ## Discovery
 
-_Describe the available auto-discovery features here._
-_Mention for what it works and what needs to be kept in mind when using it._
-
-## Binding Configuration
-
-_If your binding requires or supports general configuration settings, please create a folder ```cfg``` and place the configuration file ```<bindingId>.cfg``` inside it._
-_In this section, you should link to this file and provide some information about the options._
-_The file could e.g. look like:_
-
-```
-# Configuration for the SomfyCUL Binding
-#
-# Default secret key for the pairing of the SomfyCUL Thing.
-# It has to be between 10-40 (alphanumeric) characters.
-# This may be changed by the user for security reasons.
-secret=openHABSecret
-```
-
-_Note that it is planned to generate some part of this based on the information that is available within ```src/main/resources/OH-INF/binding``` of your binding._
-
-_If your binding does not offer any generic configurations, you can remove this section completely._
+There is no auto discovery
 
 ## Thing Configuration
 
-_Describe what is needed to manually configure a thing, either through the UI or via a thing-file._
-_This should be mainly about its mandatory and optional configuration parameters._
-
-_Note that it is planned to generate some part of this based on the XML files within ```src/main/resources/OH-INF/thing``` of your binding._
-
-### `sample` Thing Configuration
+### `culdevice` Thing Configuration
 
 | Name            | Type    | Description                           | Default | Required | Advanced |
 |-----------------|---------|---------------------------------------|---------|----------|----------|
-| hostname        | text    | Hostname or IP address of the device  | N/A     | yes      | no       |
-| password        | text    | Password to access the device         | N/A     | yes      | no       |
-| refreshInterval | integer | Interval the device is polled in sec. | 600     | no       | yes      |
+| Serial Port (port)     | String  | The serial port (COM1, /dev/ttyS0, ...) your CUL stick is attached to  | /dev/ttyS0     | yes      | no       |
+| Baud Rate (baudrate)       | int    | The serial port baud rate   | 9600     | yes      | no       |
+
+### `somfydevice` Thing Configuration
+
+There is no thing configuration for the `somfydevice` things.
 
 ## Channels
 
-_Here you should provide information about available channel types, what their meaning is and how they can be used._
-
-_Note that it is planned to generate some part of this based on the XML files within ```src/main/resources/OH-INF/thing``` of your binding._
-
-| Channel | Type   | Read/Write | Description                 |
-|---------|--------|------------|-----------------------------|
-| control | Switch | RW         | This is the control channel |
+| Channel | Type           | Description          |
+|---------|----------------|----------------------|
+| position | Rollershutter | Device control (UP, DOWN, MY/STOP) |
+| program  | Switch        | Device program button (pairing) |
 
 ## Full Example
 
-_Provide a full usage example based on textual configuration files._
-_*.things, *.items examples are mandatory as textual configuration is well used by many users._
-_*.sitemap examples are optional._
+Things and Items can be configured in the UI, or by using a `things` or `items` file like here.
 
 ### Thing Configuration
 
+somfy.things:
 ```java
-Example thing configuration goes here.
+// the CUL stick
+somfycul:culdevice:cul [ port="/dev/ttyUSB0", baudrate="38400" ]
+/** optionally, define a custom port (e.g. /dev/ttyNanoCUL) as a udev rule, for example 
+ * file: /etc/udev/rules.d/20_nanoCUL.rules
+ * content: SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{serial}=="433", SYMLINK+="ttyNanoCUL"
+ * 
+ * change idVendor, idProduct and idSerial depending on your CUL stick.
+ * you can inspect the values of your CUL stick like this:
+ * $ udevadm info -a -p $(udevadm info -q path -n /dev/ttyUSB0)
+ */
+
+// the rollershutters
+somfycul:somfydevice:livingroom_shutter_left (somfycul:culdevice:cul)
+somfycul:somfydevice:livingroom_shutter_right (somfycul:culdevice:cul)
+somfycul:somfydevice:bedroom_shutter (somfycul:culdevice:cul)
 ```
 
 ### Item Configuration
 
+somfy.items:
 ```java
-Example item configuration goes here.
+// you only need the switch items to for pairing/copy from your existing RTS remote and should remove/comment them later on
+Switch      Shutter_Livingroom_Left     "Shutter Livingroom left"       {channel="somfycul:somfydevice:livingroom_shutter_left:program"}
+Switch      Shutter_Livingroom_Right    "Shutter Livingroom right"      {channel="somfycul:somfydevice:livingroom_shutter_right:program"}
+Switch      Shutter_Bedroom             "Shutter Bedroom"               {channel="somfycul:somfydevice:bedroom_shutter:program"}
+
+// these will be your rollershutters with UP, DOWN, MY/STOP commands
+Rollershutter Shutter_Livingroom_Left   "Shutter Livingroom left"       {channel="somfycul:somfydevice:livingroom_shutter_left:position"}
+Rollershutter Shutter_Livingroom_Right  "Shutter Livingroom right"      {channel="somfycul:somfydevice:livingroom_shutter_right:position"}
+Rollershutter Shutter_Bedroom           "Shutter Bedroom"               {channel="somfycul:somfydevice:bedroom_shutter:position"}
+
+
 ```
 
 ### Sitemap Configuration
 
 ```perl
-Optional Sitemap configuration goes here.
-Remove this section, if not needed.
+sitemap home label="Home" {
+        Frame label="Ground Floor" icon="groundfloor" {
+                Text label="Livingroom" icon="livingroom" {
+                        Default item=Shutter_Livingroom_Left
+                        Default item=Shutter_Livingroom_Right
+                        }
+
+                }
+
+        Frame label="First Floor" icon="firstfloor" {
+                Text label="Bedroom" icon="bedroom" {
+                        Default item=Shutter_Bedroom
+                }
+        }
+}
 ```
 
-## Any custom content here!
 
-_Feel free to add additional sections for whatever you think should also be mentioned about your binding!_
+### Copy an existing Somfy RTS remote to your `somfydevice`
+
+To copy an existing Somfy RTS remote to your `somfydevice`, have your Somfy RTS remote ready and properly programmed to control your rollershutter. You'll need to have your `somfydevice` `items` set to `Switch` type and use the `program` channel. 
+
+Use the manufacturers procedure to _copy_ a remote to another remote. Usually this means selecting the channel you wish to copy on your Somfy RTS remote, pressing and holding the `program` or `PROG` button for 2-3 seconds until the rollershutter briefly moves up/down to confirm it is about to be programmed.
+Use your `somfydevice` `Switch` `item` to _press_ `program` shortly after to copy the remote channel to this `somfydevice`.
+
+You can now set your `somfydevice` `items` back to `Rollershutter` item type.
+
+## Props
+
+Shoutout to [@weisserd](https://github.com/weisserd) for his initial creation of this binding and allowing me use his codebase to make it an official OpenHab binding.
