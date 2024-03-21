@@ -40,6 +40,7 @@ Things and Items can be configured in the UI, or by using a `things` or `items` 
 ### Thing Configuration
 
 somfy.things:
+
 ```java
 // the CUL stick
 somfycul:culdevice:cul [ port="/dev/ttyUSB0", baudrate="38400" ]
@@ -61,6 +62,7 @@ somfycul:somfydevice:bedroom_shutter (somfycul:culdevice:cul)
 ### Item Configuration
 
 somfy.items:
+
 ```java
 // you only need the switch items to for pairing/copy from your existing RTS remote and should remove/comment them later on
 Switch      Shutter_Livingroom_Left     "Shutter Livingroom left"       {channel="somfycul:somfydevice:livingroom_shutter_left:program"}
@@ -71,8 +73,6 @@ Switch      Shutter_Bedroom             "Shutter Bedroom"               {channel
 Rollershutter Shutter_Livingroom_Left   "Shutter Livingroom left"       {channel="somfycul:somfydevice:livingroom_shutter_left:position"}
 Rollershutter Shutter_Livingroom_Right  "Shutter Livingroom right"      {channel="somfycul:somfydevice:livingroom_shutter_right:position"}
 Rollershutter Shutter_Bedroom           "Shutter Bedroom"               {channel="somfycul:somfydevice:bedroom_shutter:position"}
-
-
 ```
 
 ### Sitemap Configuration
