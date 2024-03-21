@@ -42,7 +42,6 @@ import org.osgi.service.component.annotations.Reference;
 @Component(configurationPid = "binding.somfycul", service = ThingHandlerFactory.class)
 public class SomfyCULHandlerFactory extends BaseThingHandlerFactory {
 
-    // TODO: Split to two handlers (like PulseAudio)
     private static final Set<ThingTypeUID> SUPPORTED_THING_TYPES_UIDS = Collections
             .unmodifiableSet(Stream.of(CUL_DEVICE_THING_TYPE, SOMFY_DEVICE_THING_TYPE).collect(Collectors.toSet()));
 

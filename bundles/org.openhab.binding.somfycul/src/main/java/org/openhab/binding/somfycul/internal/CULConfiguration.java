@@ -22,6 +22,6 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
 @NonNullByDefault
 public class CULConfiguration {
 
-    public String port = "/dev/ttyS0";
-    public int baudrate = 9600;
+    public String port = "";
+    public int baudrate = 0;
 }

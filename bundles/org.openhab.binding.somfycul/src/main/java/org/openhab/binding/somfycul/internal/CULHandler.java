@@ -15,12 +15,17 @@ package org.openhab.binding.somfycul.internal;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.TooManyListenersException;
 import java.util.stream.Collectors;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.core.io.transport.serial.PortInUseException;
 import org.openhab.core.io.transport.serial.SerialPort;
+import org.openhab.core.io.transport.serial.SerialPortEvent;
+import org.openhab.core.io.transport.serial.SerialPortEventListener;
 import org.openhab.core.io.transport.serial.SerialPortIdentifier;
 import org.openhab.core.io.transport.serial.SerialPortManager;
 import org.openhab.core.io.transport.serial.UnsupportedCommOperationException;
@@ -40,14 +45,11 @@ import org.slf4j.LoggerFactory;
  *
  * @author Marc Klasser - Initial contribution
  *
- *         TODO Adapt with org.openhab.binding.digiplex.internal.handler.DigiplexBridgeHandler
  */
 @NonNullByDefault
 public class CULHandler extends BaseBridgeHandler {
 
     private final Logger logger = LoggerFactory.getLogger(CULHandler.class);
-
-    private @Nullable CULConfiguration config;
 
     private long lastCommandTime = 0;
 
@@ -106,12 +108,52 @@ public class CULHandler extends BaseBridgeHandler {
             }
         }
         try {
-            outputStream.write((msg + "\n").getBytes());
+            final List<Boolean> listenerResult = new ArrayList<>();
+            serialPort.addEventListener(new SerialPortEventListener() {
+                @Override
+                public void serialEvent(SerialPortEvent event) {
+                    if (event.getEventType() == SerialPortEvent.DATA_AVAILABLE) {
+                        final StringBuilder sb = new StringBuilder();
+                        final byte[] readBuffer = new byte[20];
+                        try {
+                            do {
+                                while (inputStream.available() > 0) {
+                                    final int bytes = inputStream.read(readBuffer);
+                                    sb.append(new String(readBuffer, 0, bytes));
+                                }
+                                try {
+                                    // add wait states around reading the stream, so that interrupted transmissions are
+                                    // merged
+                                    Thread.sleep(100);
+                                } catch (InterruptedException e) {
+                                    // ignore interruption
+                                }
+                            } while (inputStream.available() > 0);
+                            final String result = sb.toString();
+                            if (result.equals(msg)) {
+                                listenerResult.add(true);
+                            }
+                        } catch (IOException e) {
+                            logger.debug("Error receiving data on serial port {}: {}", portId.getName(),
+                                    e.getMessage());
+                        }
+                    }
+                }
+            });
+            serialPort.notifyOnDataAvailable(true);
+            outputStream.write(msg.getBytes());
             outputStream.flush();
             lastCommandTime = System.currentTimeMillis();
-            return true;
-        } catch (IOException e) {
+            final long timeout = lastCommandTime + 1000;
+            while (listenerResult.isEmpty() && System.currentTimeMillis() < timeout) {
+                // Waiting for response
+                Thread.sleep(100);
+            }
+            return !listenerResult.isEmpty();
+        } catch (IOException | TooManyListenersException | InterruptedException e) {
             logger.error("Error writing '{}' to serial port {}: {}", msg, portId.getName(), e.getMessage());
+        } finally {
+            serialPort.removeEventListener();
         }
         return false;
     }
@@ -119,36 +161,51 @@ public class CULHandler extends BaseBridgeHandler {
     @Override
     public void initialize() {
         logger.debug("Start initializing!");
-        config = getConfigAs(CULConfiguration.class);
-        String port = config.port;
-        portId = serialPortManager.getIdentifier(port);
-        if (portId == null) {
-            String availablePorts = serialPortManager.getIdentifiers().map(id -> id.getName())
-                    .collect(Collectors.joining(System.lineSeparator()));
-            String description = String.format("Serial port '%s' could not be found. Available ports are:%n%s", port,
-                    availablePorts);
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, description);
-            return;
+        CULConfiguration config = getConfigAs(CULConfiguration.class);
+        if (validConfiguration(config)) {
+            String port = config.port;
+            portId = serialPortManager.getIdentifier(port);
+            if (portId == null) {
+                String availablePorts = serialPortManager.getIdentifiers().map(id -> id.getName())
+                        .collect(Collectors.joining(System.lineSeparator()));
+                String description = String.format("Serial port '%s' could not be found. Available ports are:%n%s",
+                        port, availablePorts);
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, description);
+                return;
+            }
+            logger.info("got port: {}", config.port);
+            try {
+                serialPort = portId.open("openHAB", 2000);
+                // set port parameters
+                serialPort.setSerialPortParams(config.baudrate, SerialPort.DATABITS_8, SerialPort.STOPBITS_1,
+                        SerialPort.PARITY_NONE);
+                inputStream = serialPort.getInputStream();
+                outputStream = serialPort.getOutputStream();
+                // TODO: Check version of CUL
+                updateStatus(ThingStatus.ONLINE);
+                logger.debug("Finished initializing!");
+            } catch (IOException e) {
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, "IO Error: " + e.getMessage());
+            } catch (PortInUseException e) {
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, "Port already used: " + port);
+            } catch (UnsupportedCommOperationException e) {
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
+                        "Unsupported operation on port '" + port + "': " + e.getMessage());
+            }
         }
-        logger.info("got port: {}", config.port);
-        try {
-            serialPort = portId.open("openHAB", 2000);
-            // set port parameters
-            serialPort.setSerialPortParams(config.baudrate, SerialPort.DATABITS_8, SerialPort.STOPBITS_1,
-                    SerialPort.PARITY_NONE);
-            inputStream = serialPort.getInputStream();
-            outputStream = serialPort.getOutputStream();
-            // TODO: Check version of CUL
-            updateStatus(ThingStatus.ONLINE);
-            logger.debug("Finished initializing!");
-        } catch (IOException e) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, "IO Error: " + e.getMessage());
-        } catch (PortInUseException e) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, "Port already used: " + port);
-        } catch (UnsupportedCommOperationException e) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
-                    "Unsupported operation on port '" + port + "': " + e.getMessage());
+    }
+
+    private boolean validConfiguration(@Nullable CULConfiguration config) {
+        if (config == null) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "somfycul configuration missing");
+            return false;
         }
+        if (config.port.isEmpty() || config.baudrate == 0) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
+                    "somfycul port or baudrate not specified");
+            return false;
+        }
+        return true;
     }
 
     @Override
