@@ -16,6 +16,7 @@ There is no auto discovery
 ## Thing Configuration
 
 ### `cul-device` Thing Configuration
+
 | Name | Type | Description | Default | Required | Advanced |
 |------|------|-------------|---------|----------|----------|
 | Serial Port (port) | String | The serial port (COM1, /dev/ttyS0, ...) your CUL stick is attached to | /dev/ttyUSB0 | yes | no |

@@ -19,6 +19,8 @@ import java.util.stream.Collectors;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.core.i18n.LocaleProvider;
+import org.openhab.core.i18n.TranslationProvider;
 import org.openhab.core.io.transport.serial.PortInUseException;
 import org.openhab.core.io.transport.serial.SerialPort;
 import org.openhab.core.io.transport.serial.SerialPortIdentifier;
@@ -31,6 +33,8 @@ import org.openhab.core.thing.ThingStatus;
 import org.openhab.core.thing.ThingStatusDetail;
 import org.openhab.core.thing.binding.BaseBridgeHandler;
 import org.openhab.core.types.Command;
+import org.osgi.framework.Bundle;
+import org.osgi.framework.FrameworkUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,19 +54,22 @@ public class CULHandler extends BaseBridgeHandler {
 
     private long lastCommandTime = 0;
 
-    @Nullable
-    private SerialPortIdentifier portId;
-    @Nullable
-    private SerialPort serialPort;
     private final SerialPortManager serialPortManager;
-    @Nullable
-    private OutputStream outputStream;
-    @Nullable
-    private InputStream inputStream;
+    private final Bundle bundle;
+    private final LocaleProvider localeProvider;
+    private final TranslationProvider i18nProvider;
+    private @Nullable SerialPortIdentifier portId;
+    private @Nullable SerialPort serialPort;
+    private @Nullable OutputStream outputStream;
+    private @Nullable InputStream inputStream;
 
-    public CULHandler(Bridge bridge, SerialPortManager serialPortManager) {
+    public CULHandler(Bridge bridge, SerialPortManager serialPortManager, LocaleProvider localeProvider,
+            TranslationProvider i18nProvider) {
         super(bridge);
         this.serialPortManager = serialPortManager;
+        this.localeProvider = localeProvider;
+        this.i18nProvider = i18nProvider;
+        this.bundle = FrameworkUtil.getBundle(CULHandler.class);
     }
 
     @Override
@@ -80,7 +87,9 @@ public class CULHandler extends BaseBridgeHandler {
      * @return true if the command was successfully transmitted to the CUL device, false otherwise
      */
     public boolean executeCULCommand(Thing somfyDevice, SomfyCommand somfyCommand, String rollingCode, String address) {
-        String culCommand = "Ys" + "A1" + somfyCommand.getActionKey() + "0" + rollingCode + address;
+        // culCommand syntax (basically the serial data payload): Ys + EncryptionKey=A1 + Command + 0 + RollingCode +
+        // Address
+        String culCommand = "YsA1" + somfyCommand.getActionKey() + "0" + rollingCode + address;
         logger.debug("Send message {} for thing {}", culCommand, somfyDevice.getLabel());
         return writeString(culCommand);
     }
@@ -90,8 +99,7 @@ public class CULHandler extends BaseBridgeHandler {
      * The writing of the msg is executed synchronized, so it's guaranteed that the device doesn't get
      * multiple messages concurrently.
      *
-     * @param msg
-     *            the string to send
+     * @param msg the string to send
      * @return true, if the message has been transmitted successfully, otherwise false.
      */
     protected synchronized boolean writeString(final String msg) {
@@ -120,25 +128,25 @@ public class CULHandler extends BaseBridgeHandler {
             lastCommandTime = System.currentTimeMillis();
             return true;
         } catch (IOException e) {
-            logger.error("Error writing '{}' to serial port {}: {}", msg, localPortId.getName(), e.getMessage());
+            logger.warn("Error writing '{}' to serial port {}: {}", msg, localPortId.getName(), e.getMessage());
         }
         return false;
     }
 
     @Override
     public void initialize() {
-        logger.debug("Start initializing!");
         CULConfiguration config = getConfigAs(CULConfiguration.class);
         if (!validConfiguration(config)) {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
-                    "somfycul configuration missing or invalid");
+                    "@text/offline.config-error-missing");
         } else {
             String port = config.port;
             SerialPortIdentifier localPortId = serialPortManager.getIdentifier(port);
             if (localPortId == null) {
                 String availablePorts = serialPortManager.getIdentifiers().map(id -> id.getName())
                         .collect(Collectors.joining(System.lineSeparator()));
-                String description = String.format("Serial port '%s' could not be found. Available ports are:%n%s",
+                String description = i18nProvider.getText(bundle, "offline.config-error-port-not-found",
+                        "Serial port {0} could not be found. Available ports are:\n{1}", localeProvider.getLocale(),
                         port, availablePorts);
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, description);
                 return;
@@ -163,12 +171,17 @@ public class CULHandler extends BaseBridgeHandler {
 
                 updateStatus(ThingStatus.ONLINE);
             } catch (IOException e) {
-                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, "IO Error: " + e.getMessage());
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, i18nProvider.getText(bundle,
+                        "offline.comm-error-io", "IO Error: {0}", localeProvider.getLocale(), e.getMessage()));
             } catch (PortInUseException e) {
-                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, "Port already used: " + port);
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
+                        i18nProvider.getText(bundle, "offline.comm-error-port-in-use", "Port already in use: {0}",
+                                localeProvider.getLocale(), port));
             } catch (UnsupportedCommOperationException e) {
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
-                        "Unsupported operation on port '" + port + "': " + e.getMessage());
+                        i18nProvider.getText(bundle, "offline.comm-error-unsupported-operation",
+                                "Unsupported operation on port: {0}: {1}", localeProvider.getLocale(), port,
+                                e.getMessage()));
             }
         }
     }
