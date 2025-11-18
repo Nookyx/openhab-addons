@@ -18,6 +18,8 @@ import java.util.Set;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.core.i18n.LocaleProvider;
+import org.openhab.core.i18n.TranslationProvider;
 import org.openhab.core.io.transport.serial.SerialPortManager;
 import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.Thing;
@@ -43,10 +45,15 @@ public class SomfyCULHandlerFactory extends BaseThingHandlerFactory {
             SOMFY_DEVICE_THING_TYPE);
 
     private final SerialPortManager serialPortManager;
+    private final LocaleProvider localeProvider;
+    private final TranslationProvider i18nProvider;
 
     @Activate
-    public SomfyCULHandlerFactory(final @Reference SerialPortManager serialPortManager) {
+    public SomfyCULHandlerFactory(final @Reference SerialPortManager serialPortManager,
+            final @Reference LocaleProvider localeProvider, final @Reference TranslationProvider i18nProvider) {
         this.serialPortManager = serialPortManager;
+        this.localeProvider = localeProvider;
+        this.i18nProvider = i18nProvider;
     }
 
     @Override
@@ -59,7 +66,7 @@ public class SomfyCULHandlerFactory extends BaseThingHandlerFactory {
         ThingTypeUID thingTypeUID = thing.getThingTypeUID();
 
         if (thingTypeUID.equals(CUL_DEVICE_THING_TYPE) && thing instanceof Bridge bridge) {
-            return new CULHandler(bridge, serialPortManager);
+            return new CULHandler(bridge, serialPortManager, localeProvider, i18nProvider);
         } else if (thingTypeUID.equals(SOMFY_DEVICE_THING_TYPE)) {
             return new SomfyCULHandler(thing);
         }
