@@ -17,10 +17,10 @@ There is no auto discovery
 
 ### `cul-device` Thing Configuration
 
-| Name | Type | Description | Default | Required | Advanced |
-|------|------|-------------|---------|----------|----------|
-| Serial Port (port) | String | The serial port (COM1, /dev/ttyS0, ...) your CUL stick is attached to | /dev/ttyUSB0 | yes | no |
-| Baud Rate (baudrate) | int | The serial port baud rate | 38400 | yes | no |
+| Name                 | Type   | Description                                                           | Default      | Required | Advanced |
+| -------------------- | ------ | --------------------------------------------------------------------- | ------------ | -------- | -------- |
+| Serial Port (port)   | String | The serial port (COM1, /dev/ttyS0, ...) your CUL stick is attached to | /dev/ttyUSB0 | yes      | no       |
+| Baud Rate (baudrate) | int    | The serial port baud rate                                             | 38400        | yes      | no       |
 
 ### `somfy-device` Thing Configuration
 
@@ -28,10 +28,10 @@ There is no thing configuration for the `somfy-device` things.
 
 ## Channels
 
-| Channel | Type          | Description                      |
-|---------|---------------|----------------------------------|
-| position| Rollershutter | Device control (UP, DOWN, MY/STOP)|
-| program | Switch        | Device program button (pairing)  |
+| Channel  | Type          | Description                        |
+| -------- | ------------- | ---------------------------------- |
+| position | Rollershutter | Device control (UP, DOWN, MY/STOP) |
+| program  | Switch        | Device program button (pairing)    |
 
 ## Full Example
 
