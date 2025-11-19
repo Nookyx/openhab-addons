@@ -68,7 +68,7 @@ public class SomfyCULHandlerFactory extends BaseThingHandlerFactory {
         if (thingTypeUID.equals(CUL_DEVICE_THING_TYPE) && thing instanceof Bridge bridge) {
             return new CULHandler(bridge, serialPortManager, localeProvider, i18nProvider);
         } else if (thingTypeUID.equals(SOMFY_DEVICE_THING_TYPE)) {
-            return new SomfyCULHandler(thing);
+            return new SomfyCULHandler(thing, localeProvider, i18nProvider);
         }
 
         return null;
