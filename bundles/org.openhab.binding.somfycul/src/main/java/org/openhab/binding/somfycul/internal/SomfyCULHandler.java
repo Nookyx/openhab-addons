@@ -21,7 +21,10 @@ import java.io.IOException;
 import java.util.Properties;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
+import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.core.OpenHAB;
+import org.openhab.core.i18n.LocaleProvider;
+import org.openhab.core.i18n.TranslationProvider;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.StopMoveType;
 import org.openhab.core.library.types.UpDownType;
@@ -29,16 +32,21 @@ import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
+import org.openhab.core.thing.ThingStatusDetail;
 import org.openhab.core.thing.binding.BaseThingHandler;
 import org.openhab.core.thing.binding.ThingHandler;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.State;
+import org.osgi.framework.Bundle;
+import org.osgi.framework.FrameworkUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The {@link SomfyCULHandler} is responsible for handling commands, which are
- * sent to one of the channels.
+ * The {@link SomfyCULHandler} handles roller shutter commands.
+ *
+ * Properties are persisted in the user data folder per Thing UID.
+ * Initialization is async and repeated on enable/disable.
  *
  * @author Marc Klasser - Initial contribution
  */
@@ -46,166 +54,207 @@ import org.slf4j.LoggerFactory;
 public class SomfyCULHandler extends BaseThingHandler {
 
     private final Logger logger = LoggerFactory.getLogger(SomfyCULHandler.class);
-
-    private File propertyFile;
-    private Properties p;
+    private final Bundle bundle;
+    private final LocaleProvider localeProvider;
+    private final TranslationProvider i18nProvider;
+    private @Nullable File propertyFile = null;
+    private @Nullable Properties properties = null;
 
     /**
      * Initializes the thing. As persistent state is necessary the properties are stored in the user data directory and
-     * fetched within the constructor.
+     * fetched within the initialization.
      *
      * @param thing
+     * @param localeProvider
+     * @param i18nProvider
      */
-    public SomfyCULHandler(Thing thing) {
+    public SomfyCULHandler(Thing thing, LocaleProvider localeProvider, TranslationProvider i18nProvider) {
         super(thing);
-        String somfyFolderName = OpenHAB.getUserDataFolder() + File.separator + "somfycul";
-        File folder = new File(somfyFolderName);
-        if (!folder.exists()) {
-            folder.mkdirs();
+        this.localeProvider = localeProvider;
+        this.i18nProvider = i18nProvider;
+        this.bundle = FrameworkUtil.getBundle(CULHandler.class);
+    }
+
+    /**
+     * The roller shutter is initialized and set to online by default, as there is no feedback that can check if the
+     * shutter is available, other than being able to read the properties file.
+     */
+    @Override
+    public void initialize() {
+        updateStatus(ThingStatus.UNKNOWN);
+
+        scheduler.execute(() -> {
+            try {
+                String somfyFolderName = OpenHAB.getUserDataFolder() + File.separator + "somfycul";
+                File folder = new File(somfyFolderName);
+                if (!folder.exists() && !folder.mkdirs()) {
+                    throw new IOException("Cannot create directory: " + folder.getAbsolutePath());
+                }
+
+                propertyFile = new File(somfyFolderName + File.separator
+                        + getThing().getUID().getAsString().replace(':', '_') + ".properties");
+
+                loadOrCreateProperties();
+
+                updateStatus(ThingStatus.ONLINE);
+            } catch (Exception e) {
+                logger.warn("Failed to initialize SomfyCULHandler for {}: {}", getThing().getUID(), e.getMessage());
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.OFFLINE.CONFIGURATION_ERROR,
+                        i18nProvider.getText(bundle, "offline.init-error", "Initialization failed: {0}",
+                                localeProvider.getLocale(), e.getMessage()));
+            }
+        });
+    }
+
+    private void loadOrCreateProperties() throws IOException {
+        File file = propertyFile;
+        if (file == null) {
+            throw new IOException("Property file not initialized");
         }
-        propertyFile = new File(
-                somfyFolderName + File.separator + thing.getUID().getAsString().replace(':', '_') + ".properties");
-        p = initProperties();
+
+        Properties p = new Properties();
+
+        if (!file.exists()) {
+
+            File parent = file.getParentFile();
+            if (parent == null) {
+                throw new IOException("Cannot access parent directory for property files");
+            }
+
+            long newAddress = computeNewAddress(parent);
+
+            p.setProperty("rollingCode", "0000");
+            p.setProperty("address", String.format("%06X", newAddress));
+
+            try (FileWriter fw = new FileWriter(file)) {
+                p.store(fw, "Initialized fields");
+            }
+        } else {
+            try (FileReader fr = new FileReader(file)) {
+                p.load(fr);
+            }
+        }
+
+        this.properties = p;
+    }
+
+    private long computeNewAddress(File directory) throws IOException {
+        File[] files = directory.listFiles((d, name) -> name != null && name.endsWith(".properties"));
+        if (files == null) {
+            throw new IOException("Cannot list files in " + directory.getAbsolutePath());
+        }
+
+        long maxAddr = 0;
+        for (File f : files) {
+            if (f.equals(propertyFile))
+                continue;
+
+            Properties other = new Properties();
+            try (FileReader fr = new FileReader(f)) {
+                other.load(fr);
+                String addr = other.getProperty("address");
+                if (addr != null) {
+                    try {
+                        long val = Long.decode("0x" + addr);
+                        maxAddr = Math.max(maxAddr, val);
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+            }
+        }
+
+        return maxAddr + 1;
+    }
+
+    @Override
+    public void thingUpdated(Thing thing) {
+        super.thingUpdated(thing);
+
+        this.propertyFile = null;
+        this.properties = null;
+
+        initialize();
     }
 
     @Override
     public void handleCommand(ChannelUID channelUID, Command command) {
-        logger.debug("channelUID: {}, command: {}", channelUID, command);
+
+        Properties p = properties;
+        File file = propertyFile;
+
+        if (p == null || file == null) {
+            logger.warn("Ignoring command — properties not yet loaded");
+            return;
+        }
+
         SomfyCommand somfyCommand = null;
-        if (channelUID.getId().equals(POSITION)) {
-            if (command instanceof UpDownType upDownCommand) {
-                switch (upDownCommand) {
-                    case UP:
-                        somfyCommand = SomfyCommand.UP;
-                        break;
-                    case DOWN:
-                        somfyCommand = SomfyCommand.DOWN;
-                        break;
-                }
-            } else if (command instanceof StopMoveType stopMoveCommand) {
-                switch (stopMoveCommand) {
-                    case STOP:
+
+        switch (channelUID.getId()) {
+            case POSITION:
+                if (command instanceof UpDownType upDownCommand) {
+                    switch (upDownCommand) {
+                        case UP -> somfyCommand = SomfyCommand.UP;
+                        case DOWN -> somfyCommand = SomfyCommand.DOWN;
+                    }
+                } else if (command instanceof StopMoveType stopMoveCommand) {
+                    if (stopMoveCommand == StopMoveType.STOP) {
                         somfyCommand = SomfyCommand.MY;
-                        break;
-                    default:
-                        break;
+                    }
                 }
+                break;
 
-            }
-        } else if (channelUID.getId().equals(PROGRAM)) {
-            if (command instanceof OnOffType) {
-                // Don't check for on/off - always trigger program mode
-                somfyCommand = SomfyCommand.PROG;
-            }
+            case PROGRAM:
+                if (command instanceof OnOffType) {
+                    // Don't check for on/off - always trigger program mode
+                    somfyCommand = SomfyCommand.PROG;
+                }
+                break;
         }
+
+        if (somfyCommand == null)
+            return;
+
         Bridge bridge = getBridge();
-        if (somfyCommand != null && bridge != null) {
-            // We delegate the execution to the bridge handler
-            ThingHandler bridgeHandler = bridge.getHandler();
-            if (bridgeHandler instanceof CULHandler) {
-                logger.debug("rolling code before command {}", p.getProperty("rollingCode"));
+        if (bridge == null)
+            return;
 
-                String rollingCode = String.valueOf(p.getProperty("rollingCode"));
-                String address = String.valueOf(p.getProperty("address"));
-                boolean executedSuccessfully = ((CULHandler) bridgeHandler).executeCULCommand(getThing(), somfyCommand,
-                        rollingCode, address);
-                if (executedSuccessfully && command instanceof State) {
-                    updateState(channelUID, (State) command);
+        ThingHandler handler = bridge.getHandler();
+        if (!(handler instanceof CULHandler cul))
+            return;
 
-                    long newRollingCode = Long.decode("0x" + rollingCode) + 1;
-                    String newRollingCodeStr = String.format("%04X", newRollingCode);
-                    p.setProperty("rollingCode", newRollingCodeStr);
-                    logger.debug("Updated rolling code to {}", newRollingCodeStr);
-                    p.setProperty("address", String.valueOf(p.getProperty("address")));
+        String rollingCode = p.getProperty("rollingCode");
+        String address = p.getProperty("address");
 
-                    try {
-                        p.store(new FileWriter(propertyFile), "Last command: " + somfyCommand);
-                    } catch (IOException e) {
-                        logger.error("Error occurred on writing the property file.", e);
-                    }
-                }
-            }
+        if (rollingCode == null || address == null)
+            return;
+
+        final SomfyCommand finalCommand = somfyCommand;
+
+        boolean ok = cul.executeCULCommand(getThing(), somfyCommand, rollingCode, address);
+        if (!ok)
+            return;
+
+        if (command instanceof State state) {
+            updateState(channelUID, state);
         }
+
+        long newRolling = Long.decode("0x" + rollingCode) + 1;
+        String newStr = String.format("%04X", newRolling);
+        p.setProperty("rollingCode", newStr);
+
+        scheduler.execute(() -> {
+            try (FileWriter fw = new FileWriter(file)) {
+                p.store(fw, "Last command: " + finalCommand);
+            } catch (IOException e) {
+                logger.warn("Error writing property file: {}", e.getMessage());
+            }
+        });
     }
 
-    /**
-     * The roller shutter is by default initialized and set to online, as there is no feedback that can check if the
-     * shutter is available.
-     */
     @Override
-    public void initialize() {
-        updateStatus(ThingStatus.ONLINE);
-    }
-
-    /**
-     * Initializes the properties for the thing (shutter).
-     *
-     * @return Valid properties (address and rollingCode)
-     */
-    private Properties initProperties() {
-        p = new Properties();
-
-        try {
-            if (!propertyFile.exists()) {
-                logger.debug("Trying to create file {}.", propertyFile);
-                FileWriter fileWriter = new FileWriter(propertyFile);
-                p.setProperty("rollingCode", "0000");
-                p.setProperty("address", String.format("%06X", getNewAddressForShutter()));
-                p.store(fileWriter, "Initialized fields");
-                fileWriter.close();
-                logger.debug("Created new property file {}", propertyFile);
-            } else {
-                FileReader fileReader = new FileReader(propertyFile);
-                p.load(fileReader);
-                fileReader.close();
-                logger.debug("Read properties from file {}", propertyFile);
-            }
-        } catch (IOException e) {
-            logger.error("Error occurred on writing the property file.", e);
-        }
-        return p;
-    }
-
-    /**
-     * Calculates a new address for the shutter. Therefore all property files are read and a new address is calculated.
-     *
-     * @return New 6-digit address for the shutter
-     * @throws IOException
-     */
-    private long getNewAddressForShutter() throws IOException {
-        File directory = propertyFile.getParentFile();
-        if (directory == null) {
-            throw new IOException("Cannot access parent directory for property files");
-        }
-
-        File[] files = directory.listFiles();
-        if (files == null) {
-            throw new IOException("Cannot list files in directory: " + directory.getAbsolutePath());
-        }
-
-        long maxAddress = 0;
-        for (File file : files) {
-            String extension = null;
-            // Get file extension
-            if (file.getName().contains(".")) {
-                extension = file.getName().substring(file.getName().lastIndexOf(".") + 1);
-            }
-            if (extension != null && "properties".equals(extension) && !file.equals(propertyFile)) {
-                logger.debug("Parsing properties from file {}", file);
-                Properties other = new Properties();
-                try (FileReader fileReader = new FileReader(file)) {
-                    other.load(fileReader);
-                    String addressStr = other.getProperty("address");
-                    if (addressStr != null) {
-                        long currentAddress = Long.decode("0x" + addressStr);
-                        if (currentAddress > maxAddress) {
-                            maxAddress = currentAddress;
-                        }
-                    }
-                }
-            }
-        }
-        logger.debug("Current max address is {}", maxAddress);
-        return maxAddress + 1;
+    public void dispose() {
+        properties = null;
+        propertyFile = null;
+        super.dispose();
     }
 }
