@@ -139,7 +139,8 @@ public class CULHandler extends BaseBridgeHandler {
         if (!validConfiguration(config)) {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
                     "@text/offline.config-error-missing");
-        } else {
+            return;
+        }
             String port = config.port;
             SerialPortIdentifier localPortId = serialPortManager.getIdentifier(port);
             if (localPortId == null) {

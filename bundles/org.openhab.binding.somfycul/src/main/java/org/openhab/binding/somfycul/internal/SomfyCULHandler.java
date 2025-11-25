@@ -61,12 +61,12 @@ public class SomfyCULHandler extends BaseThingHandler {
     private @Nullable Properties properties = null;
 
     /**
-     * Initializes the thing. As persistent state is necessary the properties are stored in the user data directory and
+     * Initializes the thing. As persistent state is necessary, the properties are stored in the user data directory and
      * fetched within the initialization.
      *
-     * @param thing
-     * @param localeProvider
-     * @param i18nProvider
+     * @param thing the Thing instance to be handled
+     * @param localeProvider the provider for locale information
+     * @param i18nProvider the provider for internationalization/translation
      */
     public SomfyCULHandler(Thing thing, LocaleProvider localeProvider, TranslationProvider i18nProvider) {
         super(thing);
@@ -146,8 +146,9 @@ public class SomfyCULHandler extends BaseThingHandler {
 
         long maxAddr = 0;
         for (File f : files) {
-            if (f.equals(propertyFile))
+            if (f.equals(propertyFile)) {
                 continue;
+            }
 
             Properties other = new Properties();
             try (FileReader fr = new FileReader(f)) {
@@ -178,7 +179,6 @@ public class SomfyCULHandler extends BaseThingHandler {
 
     @Override
     public void handleCommand(ChannelUID channelUID, Command command) {
-
         Properties p = properties;
         File file = propertyFile;
 
@@ -219,8 +219,9 @@ public class SomfyCULHandler extends BaseThingHandler {
             return;
 
         ThingHandler handler = bridge.getHandler();
-        if (!(handler instanceof CULHandler cul))
+        if (!(handler instanceof CULHandler cul)) {
             return;
+        }
 
         String rollingCode = p.getProperty("rollingCode");
         String address = p.getProperty("address");
@@ -238,7 +239,7 @@ public class SomfyCULHandler extends BaseThingHandler {
             updateState(channelUID, state);
         }
 
-        long newRolling = Long.decode("0x" + rollingCode) + 1;
+        long newRolling = (Long.decode("0x" + rollingCode) + 1) & 0xFFFF;
         String newStr = String.format("%04X", newRolling);
         p.setProperty("rollingCode", newStr);
 

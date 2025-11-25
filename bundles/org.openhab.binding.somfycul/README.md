@@ -17,10 +17,10 @@ There is no auto discovery
 
 ### `cul-device` Thing Configuration
 
-| Name                 | Type   | Description                                                           | Default      | Required | Advanced |
+| Parameter            | Type   | Description                                                           | Default      | Required | Advanced |
 | -------------------- | ------ | --------------------------------------------------------------------- | ------------ | -------- | -------- |
-| Serial Port (port)   | String | The serial port (COM1, /dev/ttyS0, ...) your CUL stick is attached to | /dev/ttyUSB0 | yes      | no       |
-| Baud Rate (baudrate) | int    | The serial port baud rate                                             | 38400        | yes      | no       |
+| port                 | String | The serial port (COM1, /dev/ttyS0, ...) your CUL stick is attached to | /dev/ttyUSB0 | yes      | no       |
+| baudrate             | int    | The serial port baud rate                                             | 38400        | yes      | no       |
 
 ### `somfy-device` Thing Configuration
 
@@ -107,4 +107,4 @@ You can now set your `somfy-device` `items` back to `Rollershutter` item type.
 
 ## Props
 
-Shoutout to [@weisserd](https://github.com/weisserd) for his initial creation of this binding and allowing me use his codebase to make it an official OpenHab binding.
+Shoutout to [@weisserd](https://github.com/weisserd) for his initial creation of this binding and allowing me to use his codebase to make it an official openHAB binding.
